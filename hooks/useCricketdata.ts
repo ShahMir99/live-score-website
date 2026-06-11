@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 export interface Team {
   name: string;
@@ -14,13 +14,11 @@ export interface Match {
   teamA: Team;
   teamB: Team;
   result: string;
-  toss?: string;
   competition: string;
   format: string;
   scheduledStart: string;
-
-  // full raw scorecard response
   scorecard?: any;
+  eventDetail?: any;
 }
 
 export interface Tournament {
@@ -28,244 +26,166 @@ export interface Tournament {
   matches: Match[];
 }
 
-const BASE_URL =
-  "https://lsc.fn.sportradar.com/common/en/Etc:UTC/cricket";
+const BASE_URL = "https://lsc.fn.sportradar.com/common/en/Etc:UTC/cricket";
 
-const getMatchStatus = (
-  status: number
-): "LIVE" | "UPCOMING" | "ENDED" => {
+const getMatchStatus = (status: number): "LIVE" | "UPCOMING" | "ENDED" => {
+  if (status === 1) return "LIVE";
   if (status === 0) return "UPCOMING";
-  if (status === 3) return "LIVE";
   return "ENDED";
 };
 
-const extractTeamName = (
-  categories: any[],
-  type: "Team1" | "Team2"
-) => {
+const extractTeamName = (categories: any[], type: "Team1" | "Team2") =>
+  categories.find((c) => c.eventCategoryType === type)?.categoryValue ||
+  "Unknown";
+
+const getNumericId = (eventId: string) => eventId.split(":").pop()!;
+
+const calcRR = (runs: number, overs: number) =>
+  overs > 0 ? (runs / overs).toFixed(2) : "0.00";
+
+// Compare event's startDate against the selected date (both in UTC)
+const isMatchOnDate = (startDate: string, selectedDate: Date): boolean => {
+  const matchDate = new Date(startDate);
   return (
-    categories.find(
-      (c) => c.eventCategoryType === type
-    )?.categoryValue || "Unknown"
+    matchDate.getUTCFullYear() === selectedDate.getUTCFullYear() &&
+    matchDate.getUTCMonth() === selectedDate.getUTCMonth() &&
+    matchDate.getUTCDate() === selectedDate.getUTCDate()
   );
 };
 
-const getMatchId = (eventId: string) => {
-  return eventId.split(":").pop();
+// Check if selectedDate is today (to decide whether to include LIVE matches)
+const isToday = (date: Date): boolean => {
+  const now = new Date();
+  return (
+    date.getUTCFullYear() === now.getUTCFullYear() &&
+    date.getUTCMonth() === now.getUTCMonth() &&
+    date.getUTCDate() === now.getUTCDate()
+  );
 };
 
-export const useCricketData = () => {
-  const [tournaments, setTournaments] =
-    useState<Tournament[]>([]);
+export const useCricketData = (selectedDate: Date) => {
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [loading, setLoading] =
-    useState(true);
+  const fetchCricketData = useCallback(async () => {
+    try {
+      setError(null);
+      setLoading(true);
 
-  const [error, setError] =
-    useState<string | null>(null);
+      // ── STEP 1: fetch all events ───────────────────────────
+      const eventsRes = await fetch(`${BASE_URL}/get_events/`);
+      if (!eventsRes.ok) throw new Error("Failed to fetch events");
 
-  useEffect(() => {
-    const fetchCricketData = async () => {
-      try {
-        setError(null);
+      const eventsData = await eventsRes.json();
+      const allEvents: any[] = eventsData?.doc?.[0]?.data?.sportEvents || [];
 
-        // Get all matches
-        const eventsRes = await fetch(
-          `${BASE_URL}/get_events/`
-        );
+      // ── STEP 2: filter by selected date ───────────────────
+      // If selected date is today, also include any LIVE matches
+      // (they may have started yesterday and are still running)
+      const filteredEvents = allEvents.filter((e) => {
+        const matchesDate = isMatchOnDate(e.startDate, selectedDate);
+        const isLiveToday = isToday(selectedDate) && e.status === 1;
+        return matchesDate || isLiveToday;
+      });
 
-        if (!eventsRes.ok) {
-          throw new Error(
-            "Failed to fetch matches"
-          );
-        }
+      if (filteredEvents.length === 0) {
+        setTournaments([]);
+        setLoading(false);
+        return;
+      }
 
-        const eventsData =
-          await eventsRes.json();
+      // ── STEP 3: fetch get_event + get_scorecard for each ──
+      const matches = await Promise.all(
+        filteredEvents.map(async (event: any) => {
+          const numericId = getNumericId(event.eventId);
 
-        const sportEvents =
-          eventsData?.doc?.[0]?.data
-            ?.sportEvents || [];
+          const [eventRes, scorecardRes] = await Promise.allSettled([
+            fetch(`${BASE_URL}/get_event/${numericId}`),
+            fetch(`${BASE_URL}/get_scorecard/${numericId}`),
+          ]);
 
-        // Fetch scorecard for every match
-        const matches = await Promise.all(
-          sportEvents.map(async (event: any) => {
-            const numericId =
-              getMatchId(event.eventId);
-
-            let scorecard = null;
-
-            try {
-              const scoreRes = await fetch(
-                `${BASE_URL}/get_scorecard/${numericId}`
-              );
-
-              const scoreJson =
-                await scoreRes.json();
-
-              // entire response
-              scorecard =
-                scoreJson?.doc?.[0]?.data
-                  ?.score || null;
-            } catch (err) {
-              console.error(
-                `Scorecard failed for ${numericId}`,
-                err
-              );
-            }
-
-            const innings =
-              scorecard?.innings || [];
-
-            const firstInnings =
-              innings[0];
-
-            const secondInnings =
-              innings[1];
-
-            return {
-              id: event.eventId,
-
-              status: getMatchStatus(
-                event.status
-              ),
-
-              competition:
-                event.competition ||
-                "Unknown",
-
-              format:
-                event.format || "T20",
-
-              scheduledStart:
-                event.scheduledStart,
-
-              result:
-                scorecard
-                  ?.matchCommentary ||
-                "No Result",
-
-              toss:
-                scorecard?.matchCommentary?.match(
-                  /\(Toss:.*?\)/
-                )?.[0],
-
-              teamA: {
-                name: extractTeamName(
-                  event.categories,
-                  "Team1"
-                ),
-
-                score:
-                  firstInnings?.runs ??
-                  0,
-
-                wickets:
-                  firstInnings?.wickets ??
-                  0,
-
-                overs:
-                  firstInnings?.overs ??
-                  0,
-
-                rr:
-                  firstInnings?.overs
-                    ? (
-                        firstInnings.runs /
-                        firstInnings.overs
-                      ).toFixed(2)
-                    : "0.00",
-              },
-
-              teamB: {
-                name: extractTeamName(
-                  event.categories,
-                  "Team2"
-                ),
-
-                score:
-                  secondInnings?.runs ??
-                  0,
-
-                wickets:
-                  secondInnings?.wickets ??
-                  0,
-
-                overs:
-                  secondInnings?.overs ??
-                  0,
-
-                rr:
-                  secondInnings?.overs
-                    ? (
-                        secondInnings.runs /
-                        secondInnings.overs
-                      ).toFixed(2)
-                    : "0.00",
-              },
-
-              // save ENTIRE response
-              scorecard,
-            };
-          })
-        );
-
-        // Group by tournament
-        const tournamentMap =
-          new Map<string, Match[]>();
-
-        matches.forEach((match) => {
-          if (
-            !tournamentMap.has(
-              match.competition
-            )
-          ) {
-            tournamentMap.set(
-              match.competition,
-              []
-            );
+          let eventDetail: any = null;
+          if (eventRes.status === "fulfilled" && eventRes.value.ok) {
+            const json = await eventRes.value.json();
+            eventDetail = json?.doc?.[0]?.data?.sportEvent || null;
           }
 
-          tournamentMap
-            .get(match.competition)!
-            .push(match);
-        });
+          let scorecard: any = null;
+          if (scorecardRes.status === "fulfilled" && scorecardRes.value.ok) {
+            const json = await scorecardRes.value.json();
+            scorecard = json?.doc?.[0]?.data?.score || null;
+          }
 
-        const grouped =
-          Array.from(
-            tournamentMap.entries()
-          ).map(([name, matches]) => ({
-            name,
-            matches,
-          }));
+          const currentStatus = eventDetail?.status ?? event.status;
+          const innings = scorecard?.innings || [];
+          const firstInnings = innings[0] || null;
+          const secondInnings = innings[1] || null;
 
-        setTournaments(grouped);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Something went wrong"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCricketData();
-
-    const interval =
-      setInterval(
-        fetchCricketData,
-        30000
+          return {
+            id: event.eventId,
+            status: getMatchStatus(currentStatus),
+            competition: event.competition || "Unknown",
+            format: event.format || "Unknown",
+            scheduledStart: event.startDate,
+            result:
+              scorecard?.matchCommentary ||
+              eventDetail?.eventName ||
+              "No result yet",
+            teamA: {
+              name: extractTeamName(event.categories, "Team1"),
+              score: firstInnings?.runs ?? 0,
+              wickets: firstInnings?.wickets ?? 0,
+              overs: firstInnings?.overs ?? 0,
+              rr: calcRR(firstInnings?.runs ?? 0, firstInnings?.overs ?? 0),
+            },
+            teamB: {
+              name: extractTeamName(event.categories, "Team2"),
+              score: secondInnings?.runs ?? 0,
+              wickets: secondInnings?.wickets ?? 0,
+              overs: secondInnings?.overs ?? 0,
+              rr: calcRR(secondInnings?.runs ?? 0, secondInnings?.overs ?? 0),
+            },
+            scorecard,
+            eventDetail,
+          } as Match;
+        }),
       );
 
-    return () =>
-      clearInterval(interval);
-  }, []);
+      // Group by competition, sort LIVE → UPCOMING → ENDED
+      const statusOrder = { LIVE: 0, UPCOMING: 1, ENDED: 2 };
+      const tournamentMap = new Map<string, Match[]>();
 
-  return {
-    tournaments,
-    loading,
-    error,
-  };
+      matches
+        .sort((a, b) => statusOrder[a.status] - statusOrder[b.status])
+        .forEach((match) => {
+          const key = match.competition;
+          if (!tournamentMap.has(key)) tournamentMap.set(key, []);
+          tournamentMap.get(key)!.push(match);
+        });
+
+      setTournaments(
+        Array.from(tournamentMap.entries()).map(([name, matches]) => ({
+          name,
+          matches,
+        })),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDate]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchCricketData();
+
+    if (!isToday(selectedDate)) return;
+
+    const interval = setInterval(fetchCricketData, 5000);
+    return () => clearInterval(interval);
+  }, [fetchCricketData, selectedDate]);
+
+  return { tournaments, loading, error };
 };

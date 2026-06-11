@@ -70,16 +70,43 @@
 
 :root {
   --radius: 0.5rem;
-  --cricket-red: oklch(0.55 0.20 18);
-  --cricket-red-dark: oklch(0.42 0.20 18);
+  --cricket-red: oklch(0.55 0.2 18);
+  --cricket-red-dark: oklch(0.42 0.2 18);
   --cricket-red-hsl: 8 70% 48%;
-  --pitch: oklch(0.30 0.07 150);
-  --bg-constellation: radial-gradient(circle at 12% 22%, oklch(0.65 0.18 210 / 0.18) 1.2px, transparent 1.8px),
-    radial-gradient(circle at 82% 32%, oklch(0.65 0.18 210 / 0.18) 1.2px, transparent 1.8px),
-    radial-gradient(circle at 28% 72%, oklch(0.65 0.18 210 / 0.18) 1.2px, transparent 1.8px),
-    radial-gradient(circle at 92% 78%, oklch(0.65 0.18 210 / 0.18) 1.2px, transparent 1.8px),
-    radial-gradient(circle at 50% 50%, oklch(0.65 0.18 210 / 0.18) 1.2px, transparent 1.8px),
-    linear-gradient(135deg, transparent 49.5%, oklch(0.65 0.18 210 / 0.10) 49.8%, oklch(0.65 0.18 210 / 0.10) 50.2%, transparent 50.5%);
+  --pitch: oklch(0.3 0.07 150);
+  --bg-constellation:
+    radial-gradient(
+      circle at 12% 22%,
+      oklch(0.65 0.18 210 / 0.18) 1.2px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 82% 32%,
+      oklch(0.65 0.18 210 / 0.18) 1.2px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 28% 72%,
+      oklch(0.65 0.18 210 / 0.18) 1.2px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 92% 78%,
+      oklch(0.65 0.18 210 / 0.18) 1.2px,
+      transparent 1.8px
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      oklch(0.65 0.18 210 / 0.18) 1.2px,
+      transparent 1.8px
+    ),
+    linear-gradient(
+      135deg,
+      transparent 49.5%,
+      oklch(0.65 0.18 210 / 0.1) 49.8%,
+      oklch(0.65 0.18 210 / 0.1) 50.2%,
+      transparent 50.5%
+    );
   --background: oklch(0.18 0.06 255);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
@@ -113,6 +140,20 @@
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
 }
+
+  :root {
+    --cricket-red: oklch(0.62 0.22 27);
+    --cricket-red-foreground: oklch(0.99 0 0);
+    --cricket-pitch: oklch(0.36 0.07 145);
+    --cricket-pitch-foreground: oklch(0.99 0 0);
+    --cricket-header: oklch(0.22 0.02 240);
+    --cricket-muted: oklch(0.96 0.005 240);
+    --over-dot: oklch(0.78 0.01 240);
+    --over-wicket: oklch(0.62 0.22 27);
+    --over-six: oklch(0.55 0.18 285);
+    --over-four: oklch(0.55 0.2 250);
+    --over-run: oklch(0.35 0.02 240);
+  }
 
 .dark {
   --background: oklch(0.129 0.042 264.695);
@@ -155,7 +196,13 @@
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background: #00003c url(../assets/background.1672d8e7.png) no-repeat 50% fixed;
+    background-size: cover;
   }
+}
+
+.imageBanner {
+  background-image: url('../assets//cricketbg.png');
+background-size: cover;
+background-position: top center;
 }
